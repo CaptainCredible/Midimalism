@@ -261,7 +261,9 @@ section at the end of this file).
 
 /* -------------------------- Device Description --------------------------- */
 
-#define USB_CFG_VENDOR_ID 0xc0, 0x16
+
+#define USB_CFG_VENDOR_ID 0xc0, 0x16 // This is the pid.codes VID, leave as is
+//#define USB_CFG_VENDOR_ID 0xc0, 0x16
 /* USB vendor ID for the device, low byte first. If you have registered your
  * own Vendor ID, define it here. Otherwise you may use one of obdev's free
  * shared VID/PID pairs. Be sure to read USB-IDs-for-free.txt for rules!
@@ -270,7 +272,8 @@ section at the end of this file).
  * with libusb: 0x16c0/0x5dc.  Use this VID/PID pair ONLY if you understand
  * the implications!
  */
-#define USB_CFG_DEVICE_ID 0xe4, 0x05
+#define USB_CFG_DEVICE_ID 0xBB, 0x0B // Your new PID 0x0BBB (3003)
+//#define USB_CFG_DEVICE_ID 0xe4, 0x05
 /* This is the ID of the product, low byte first. It is interpreted in the
  * scope of the vendor ID. If you have registered your own VID with usb.org
  * or if you have licensed a PID from somebody else, define it here. Otherwise
