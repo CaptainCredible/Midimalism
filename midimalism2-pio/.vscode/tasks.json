@@ -1,0 +1,46 @@
+{
+  // Command Palette -> "Tasks: Run Task"
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Midimalism: Build",
+      "type": "shell",
+      "command": "\"${userHome}/.platformio/penv/bin/pio\" run",
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "Midimalism: Upload over USB (kick or replug)",
+      "detail": "Sends SysEx F0 08 F7 so the Midimalism restarts into its bootloader, then flashes over USB. Asks for a replug if it can't kick.",
+      "type": "shell",
+      "command": "\"${userHome}/.platformio/penv/bin/pio\" run -t upload",
+      "problemMatcher": []
+    },
+    {
+      "label": "Midimalism: Bootstrap fresh chip (USBasp programmer, writes fuses)",
+      "detail": "Bootloader + sketch + fuses E1/5D/FE. hfuse 5D disables the reset pin: after this the chip only updates over USB.",
+      "type": "shell",
+      "command": "if [ \"${input:confirmBootstrap}\" = yes ]; then \"${userHome}/.platformio/penv/bin/pio\" run -t bootstrap; else echo Cancelled.; fi",
+      "problemMatcher": []
+    },
+    {
+      "label": "Midimalism: Export firmware to midimalismUploader",
+      "detail": "Builds, then copies firmware.hex, the bootloader and the upload tools to ~/Documents/code/midimalismUploader.",
+      "type": "shell",
+      "command": "set -e; U=\"${userHome}/Documents/code/midimalismUploader\"; \"${userHome}/.platformio/penv/bin/pio\" run; mkdir -p \"$U/firmware\" \"$U/tools\"; cp .pio/build/midimalism/firmware.hex \"$U/firmware/midimalism.hex\"; cp tools/bootloader/teenyriot-usbtiny.hex \"$U/firmware/bootloader-teenyriot-usbtiny.hex\"; cp tools/make_bootstrap_image.py tools/midimalism_upload.py \"$U/tools/\"; echo \"Exported to $U\"",
+      "problemMatcher": []
+    }
+  ],
+  "inputs": [
+    {
+      "id": "confirmBootstrap",
+      "type": "pickString",
+      "description": "Fresh ATtiny85 in the USBasp? This writes fuses that disable the reset pin (no more ISP).",
+      "options": [
+        { "label": "Cancel", "value": "no" },
+        { "label": "Yes, fresh chip in the programmer: flash + fuses", "value": "yes" }
+      ],
+      "default": "no"
+    }
+  ]
+}
