@@ -54,7 +54,18 @@ PlatformIO isn't on PATH. Use `~/.platformio/penv/bin/pio`.
   without HV programming.
 
 ## Status (24 Nov 2026)
-Builds cleanly at 4368 / 5370 bytes. **Nothing has been tested on hardware yet**: not the
-new USB name/ID, not the SysEx kick, not the USB upload, and not the fixed uploader /
-bootstrap image. The next step is to program one fresh chip with the uploader or the
-bootstrap task, then update it over USB.
+Builds cleanly at 4368 / 5370 bytes. **Tested on hardware with one chip:** `pio run -t
+bootstrap` flashed + fused it, it enumerates as Midimalism 1209:3003, the SysEx kick
+works, and `pio run -t upload` updates it over USB (kick → bootloader in ~1 s → 2.2 s
+write → verified). Not yet tested: the `Upload MIDIMALISM.command` batch uploader on a
+fresh chip.
+- USB upload uses the libusb page writer in `tools/midimalism_upload.py`, **not avrdude**
+  (avrdude's 200-byte blocks break this bootloader, see README). It needs Homebrew libusb.
+- Apple Silicon Mac: the Midimalism must go through a **USB 2.0 hub** (5/5 uploads OK,
+  first try). Directly on USB-C, only some uploads succeed. Throttling made it worse, and so
+  did per-transfer retries. Likely cause: after a page's last word the bootloader waits only
+  ~2 ms before an SPM with interrupts off, and the direct port sometimes misses that window.
+- If the hub gets annoying: fresh chips can get a patched or different bootloader before
+  fusing. Fused chips could only get one via an "upgrader" sketch (ATtiny85 has no boot
+  section, so a sketch can rewrite the bootloader). That's risky: a power cut mid-write
+  needs HV programming.

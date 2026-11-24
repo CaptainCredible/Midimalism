@@ -19,10 +19,22 @@ after the first flash. Updates go through the **teenyriot-usbtiny** bootloader
    **`F0 08 F7`** (watchdog reset, see `restartToBootloader()` in
    `include/midimalism.h`). This is the same "kick" CocoMake7's CocoMidi
    library uses.
-3. `pio run -t upload` runs `tools/midimalism_upload.py`. It sends the kick to
-   the "Midimalism" (or old "TeenageUSB") MIDI port, then keeps retrying
-   `avrdude -c usbasp -D` until the bootloader answers. During the upload the
-   bootloader rewrites the vectors and checksum itself.
+3. `pio run -t upload` runs `tools/midimalism_upload.py`. It asks
+   "Found Midimalism. Kick it into the bootloader? [Y/n]", sends the kick to
+   the "Midimalism" (or old "TeenageUSB") MIDI port, waits for the bootloader
+   and flashes it **itself over libusb, not with avrdude**: chip erase, one
+   64-byte page per USB transfer with a 20 ms pause, read-back verify, then
+   disconnect. The bootloader rewrites the vectors and checksum itself.
+   Each page goes out as eight 8-byte transfers (one USB packet each), and
+   after the disconnect the script checks that the sketch (1209:3003) comes
+   back rather than the bootloader. Failed tries are redone (up to 5).
+   avrdude doesn't work here: the bootloader commits each page with
+   interrupts off and can't take a transfer that crosses a page boundary,
+   but avrdude sends 200-byte blocks back to back (both avrdude 6.3 and
+   CocoMake7's own fail; tested 24 Nov 2026). Needs Homebrew's `libusb`.
+   **On Apple Silicon Macs, plug the Midimalism into a USB 2.0 hub.** On the
+   built-in USB-C ports 25–40 % of the bootloader's transfers fail; through a
+   hub none did.
 4. **No kickable port?** That means the board has older firmware without the
    kick, or a crashed sketch. The script then asks you to unplug and replug,
    and catches the 2 s window. `upload_flags = --no-kick` skips the kick.
