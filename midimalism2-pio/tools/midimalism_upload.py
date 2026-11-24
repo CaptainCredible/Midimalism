@@ -50,10 +50,13 @@ BOOT_VID, BOOT_PID = 0x16C0, 0x05DC
 SKETCH_VID, SKETCH_PID = 0x1209, 0x3003     # include/usbconfig.h
 PAGE = 64
 SKETCH_MAX = 0x14FA                 # 5370: checksum byte + saved vectors above
-PAGE_PAUSE = 0.02                   # s after each page (SPM with interrupts off)
+PAGE_PAUSE = 0.05                   # s after each page: bootloader may wait up to 20 ms for the
+                                    # transfer end, then erase+write takes up to 9 ms
 ERASE_PAUSE = 0.8                   # s after chip erase (84 pages x 4.5 ms)
 SETTLE = 0.5                        # s after the first request, before programming
 ATTEMPTS = 5                        # whole-upload tries while the bootloader is up
+LINK_READS = 100                    # test reads that must all succeed before writing
+LINK_RESETS = 10                    # USB resets (= recalibrations) to get a clean link
 
 # USBasp requests
 CONNECT, DISCONNECT, TRANSMIT, READFLASH, ENABLEPROG, WRITEFLASH = 1, 2, 3, 4, 5, 6
@@ -159,6 +162,7 @@ def load_libusb():
             ctypes.c_uint16, ctypes.c_char_p, ctypes.c_uint16, ctypes.c_uint]
         lib.libusb_close.argtypes = [ctypes.c_void_p]
         lib.libusb_exit.argtypes = [ctypes.c_void_p]
+        lib.libusb_reset_device.argtypes = [ctypes.c_void_p]
         return lib
     return None
 
@@ -184,8 +188,10 @@ class Bootloader:
                 buf = ctypes.create_string_buffer(bytes(data_or_len), n)
             r = self.lib.libusb_control_transfer(self.h, rtype, req, value,
                                                  index, buf, n, 1000)
-            if r >= 0:
+            if r == n:
                 return buf.raw[:r]
+            # r < n: a packet got lost mid-transfer (seen on direct USB-C):
+            # count it as a failed transfer, not as a short answer
             time.sleep(0.05)
         raise UploadError("USB request %d (address 0x%04x) failed, libusb "
                           "error %d" % (req, value, r))
@@ -195,8 +201,10 @@ class Bootloader:
         return self.ctrl(REQ_IN, req, value, index, n, tries=5)
 
     def close(self):
-        self.lib.libusb_close(self.h)
-        self.lib.libusb_exit(self.ctx)
+        if self.h:          # may be called twice after a failed recalibration
+            self.lib.libusb_close(self.h)
+            self.lib.libusb_exit(self.ctx)
+            self.h = None
 
 
 def wait_for_bootloader(lib, timeout, kicked):
@@ -218,6 +226,41 @@ def wait_for_bootloader(lib, timeout, kicked):
             warned = True
         time.sleep(0.1)
     return None
+
+
+def link_ok(bl, n=LINK_READS):
+    """n single-packet reads from the idle bootloader. True if all worked."""
+    for _ in range(n):
+        buf = ctypes.create_string_buffer(8)
+        if bl.lib.libusb_control_transfer(bl.h, REQ_IN, READFLASH, 0, 0,
+                                          buf, 8, 200) != 8:
+            return False
+    return True
+
+
+def get_clean_link(lib, bl):
+    """The bootloader calibrates its RC oscillator on every USB bus reset, and
+    the result varies a little. On marginal ports (Apple Silicon USB-C, no
+    hub) some calibrations lose 5-15 % of packets, others lose none. So test
+    the link and, while it's bad, reset the bus to get a new calibration.
+    The bootloader stays active through a bus reset. Returns a Bootloader."""
+    for n in range(LINK_RESETS + 1):
+        if link_ok(bl):
+            if n:
+                print("USB link clean after %d recalibration%s." % (n, "s" if n > 1 else ""))
+            return bl
+        if n == LINK_RESETS:
+            print("USB link still losing packets after %d recalibrations, "
+                  "trying anyway (a USB 2.0 hub helps)." % n)
+            return bl
+        lib.libusb_reset_device(bl.h)
+        bl.close()
+        time.sleep(0.5)
+        bl = wait_for_bootloader(lib, 5, False)
+        if not bl:
+            raise UploadError("The bootloader didn't come back after a USB reset.")
+        bl.read(CONNECT)
+    return bl
 
 
 def flash(bl, img):
@@ -314,6 +357,8 @@ def upload_libusb(lib, args, img, kicked):
     # resets the bootloader's checksum), so a failed try can simply be redone.
     for attempt in range(1, ATTEMPTS + 1):
         try:
+            bl.read(CONNECT)            # makes the bootloader stay
+            bl = get_clean_link(lib, bl)
             flash(bl, img)
             bl.close()
             ok = booted_ok(lib)

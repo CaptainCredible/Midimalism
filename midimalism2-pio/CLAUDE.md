@@ -54,18 +54,30 @@ PlatformIO isn't on PATH. Use `~/.platformio/penv/bin/pio`.
   without HV programming.
 
 ## Status (24 Nov 2026)
-Builds cleanly at 4368 / 5370 bytes. **Tested on hardware with one chip:** `pio run -t
-bootstrap` flashed + fused it, it enumerates as Midimalism 1209:3003, the SysEx kick
-works, and `pio run -t upload` updates it over USB (kick → bootloader in ~1 s → 2.2 s
-write → verified). Not yet tested: the `Upload MIDIMALISM.command` batch uploader on a
-fresh chip.
+Builds cleanly at 4374 / 5370 bytes. Two chips on hardware:
+- **Chip A, stock teenyriot bootloader:** bootstrapped with `pio run -t bootstrap`. Uploads
+  through a USB 2.0 hub worked 5/5. It hasn't been tested with the new kick (direct jump,
+  see below) or the link check yet.
+- **Chip B, patched bootloader `tools/bootloader/teenyriot-midimalism/`** (the first build,
+  WITHOUT the MCUSR fix): directly on Apple Silicon USB-C, 8/8 uploads OK with the current
+  uploader, 7 of them kicked.
+
+Findings:
 - USB upload uses the libusb page writer in `tools/midimalism_upload.py`, **not avrdude**
   (avrdude's 200-byte blocks break this bootloader, see README). It needs Homebrew libusb.
-- Apple Silicon Mac: the Midimalism must go through a **USB 2.0 hub** (5/5 uploads OK,
-  first try). Directly on USB-C, only some uploads succeed. Throttling made it worse, and so
-  did per-transfer retries. Likely cause: after a page's last word the bootloader waits only
-  ~2 ms before an SPM with interrupts off, and the direct port sometimes misses that window.
-- If the hub gets annoying: fresh chips can get a patched or different bootloader before
-  fusing. Fused chips could only get one via an "upgrader" sketch (ATtiny85 has no boot
-  section, so a sketch can rewrite the bootloader). That's risky: a power cut mid-write
-  needs HV programming.
+  Pages go out as 8-byte transfers (multi-packet OUT transfers failed on direct ports).
+- **Oscillator calibration varies per USB bus reset.** On direct USB-C some calibrations lose
+  5-15 % of packets, others none. The uploader tests 100 reads first and resets the bus
+  (= recalibrates) until the link is clean. That's what made direct USB-C work. Through a
+  hub every calibration was clean.
+- The kick (`restartToBootloader()`) now jumps to 0x1500 instead of a watchdog reset. A
+  watchdog reset leaves WDRF set, which forces the watchdog on, and upstream
+  USBaspLoader-tiny85 doesn't clear MCUSR. The stock teenyriot binary does. Chip B has
+  that bug: a watchdog kick sends it into a 16 ms reset loop until a power cycle.
+- Patched bootloader = upstream USBaspLoader-tiny85 (= teenyriot's source: pins D- PB5,
+  D+ PB3, 2 s) + (1) wait for the USB transfer end instead of a fixed 2 ms before page
+  writes, (2) USB ISR dispatch via GPIOR0 bit 0 instead of the RAM magic word (2-3 cycles
+  instead of 10-16), (3) MCUSR = 0 (added after chip B; this build is untested). The
+  bootstrap target and the uploader still use the STOCK bootloader.
+- Fused chips could only get a new bootloader via an "upgrader" sketch (ATtiny85 has no
+  boot section). That's risky: a power cut mid-write needs HV programming.

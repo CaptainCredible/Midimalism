@@ -1,0 +1,25 @@
+--- /private/tmp/claude-502/-Users-daniel-Documents-code-Midimalism-midimalism2-pio/5c00fd4e-d08f-4f58-a9da-e4b5f74d9295/scratchpad/src/USBaspLoader-tiny85/firmware/bootloaderconfig.h	2026-11-24 11:59:13
++++ bootloaderconfig.h	2026-11-24 12:01:22
+@@ -77,11 +77,11 @@
+  #endif
+  
+ #if (defined __AVR_ATtiny85__) && (HARDWARE_CONFIG == TINY85_HARDWARE_CONFIG_2)
+-#	define USB_CFG_DMINUS_BIT      3
++#	define USB_CFG_DMINUS_BIT      5
+ /* This is the bit number in USB_CFG_IOPORT where the USB D- line is connected.
+  * This may be any bit in the port.
+  */
+-#	define USB_CFG_DPLUS_BIT       4
++#	define USB_CFG_DPLUS_BIT       3
+ /* This is the bit number in USB_CFG_IOPORT where the USB D+ line is connected.
+  * This may be any bit in the port, but must be configured as a pin change interrupt.
+  */
+@@ -210,7 +210,7 @@
+ /* Application Checksum Section */
+ #ifdef APPCHECKSUM
+ /* max 6200ms to not overflow idlePolls variable */
+-#   define AUTO_EXIT_MS    5000
++#   define AUTO_EXIT_MS    2000
+ 
+ /* number of bytes before the boot loader vectors to store the application checksum */
+ #   define APPCHECKSUM_POSITION    6

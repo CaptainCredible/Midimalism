@@ -1,0 +1,91 @@
+--- /private/tmp/claude-502/-Users-daniel-Documents-code-Midimalism-midimalism2-pio/5c00fd4e-d08f-4f58-a9da-e4b5f74d9295/scratchpad/src/USBaspLoader-tiny85/firmware/main.c	2026-11-24 11:59:13
++++ /Users/daniel/Documents/code/Midimalism/midimalism2-pio/tools/bootloader/teenyriot-midimalism/src/main.c	2026-11-24 12:24:10
+@@ -279,9 +279,8 @@
+ #endif
+ 
+ #ifdef TINY85MODE
+-    // clear magic word from bottom of stack before jumping to the app
+-    *(uint8_t*)(RAMEND) = 0x00;
+-    *(uint8_t*)(RAMEND-1) = 0x00;
++    // USB interrupts belong to the application from now on (see usbdrvasm165.inc)
++    GPIOR0 = 0;
+ 
+     // jump to application reset vector at end of flash
+     asm volatile ("rjmp __vectors - 4");
+@@ -502,19 +501,7 @@
+ 
+ /* ------------------------------------------------------------------------ */
+ 
+-#ifdef TINY85MODE
+-void PushMagicWord (void) __attribute__ ((naked)) __attribute__ ((section (".init3")));
+ 
+-// put the word "B007" at the bottom of the stack (RAMEND - RAMEND-1)
+-void PushMagicWord (void)
+-{
+-    asm volatile("ldi r16, 0xB0"::);
+-    asm volatile("push r16"::);
+-    asm volatile("ldi r16, 0x07"::);
+-    asm volatile("push r16"::);
+-}
+-#endif
+-
+ /* ------------------------------------------------------------------------ */
+ 
+ static inline void initForUsbConnectivity(void)
+@@ -545,6 +532,23 @@
+     // TODO: necessary to reset CURRENT_ADDRESS?
+     CURRENT_ADDRESS = 0;
+     checksum = 0;
++}
++
++extern volatile uchar usbTxLen;
++
++// Midimalism patch: flash writes switch interrupts off for 4.5 ms per page,
++// so the device can't answer USB meanwhile. The original code waited a fixed
++// 2 ms for the host to finish the USB transfer that triggered the write; on
++// some hosts (Apple Silicon USB-C ports) the transfer wasn't done by then and
++// failed. Instead, wait until the driver has handed the transfer's last
++// packet (status stage or reply) to the host, then a little longer for the
++// host's handshake. Gives up after 20 ms, then writes anyway.
++static void waitForUsbTransferEnd(void)
++{
++    uint8_t i;
++    for(i = 0; i < 200 && usbTxLen != USBPID_NAK; i++)
++        _delay_us(100);
++    _delay_us(500);
+ }
+ 
+ static inline void tiny85FlashWrites(void)
+@@ -552,7 +556,8 @@
+ #if HAVE_CHIP_ERASE
+     if(eraseRequested)
+     {
+-        _delay_ms(2);
++        waitForUsbTransferEnd();
++        _delay_ms(2);   // status stage of the request follows the reply
+         cli();
+         eraseApplication();
+         sei();
+@@ -563,7 +568,7 @@
+ #endif
+     if(flashPageLoaded)
+     {
+-        _delay_ms(2);
++        waitForUsbTransferEnd();
+         // write page to flash, interrupts will be disabled for several milliseconds
+         cli();
+ 
+@@ -593,6 +598,13 @@
+ #endif
+ 
+     /* initialize  */
++#ifdef TINY85MODE
++    GPIOR0 = 1;         /* USB interrupts belong to the boot loader (usbdrvasm165.inc) */
++#endif
++    MCUSR = 0;          /* Midimalism fix (the stock teenyriot binary has it, upstream
++                           doesn't): after a watchdog reset WDRF keeps the watchdog
++                           forced on, wdt_disable() can't stop it and the boot loader
++                           is reset every 16 ms, forever (until a power cycle) */
+     wdt_disable();      /* main app may have enabled watchdog */
+ #ifdef TINY85MODE
+     tiny85FlashInit();

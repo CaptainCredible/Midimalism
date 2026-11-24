@@ -605,10 +605,24 @@ static void restartToBootloader()
     usbDeviceDisconnect();          // host sees the device unplugged
     _delay_ms(100);
 
-    USB_INTR_ENABLE = 0;
-    USB_INTR_CFG = 0;
-
-    wdt_enable(WDTO_30MS);          // watchdog reset -> bootloader
+    // Jump straight to the bootloader instead of a watchdog reset. After a
+    // watchdog reset WDRF keeps the watchdog forced on; a bootloader that
+    // doesn't clear MCUSR first (the first teenyriot-midimalism build,
+    // 24 Nov 2026) then resets every 16 ms until the power is cycled.
+    // Everything that could raise an interrupt is switched off first: the
+    // bootloader runs with interrupts on, and every vector except reset and
+    // the USB one still points into this sketch.
+    USB_INTR_ENABLE = 0;            // GIMSK
+    USB_INTR_CFG = 0;               // PCMSK
+    GIFR = 0xFF;                    // drop pending INT0/PCINT flags
+    TIMSK = 0;                      // millis() timer and any other timer IRQ
+    TIFR = 0xFF;
+    ADCSRA = 0;
+    ACSR &= ~_BV(ACIE);
+    USICR = 0;
+    EECR = 0;
+    MCUSR = 0;
+    ((void (*)(void))(0x1500 / 2))();   // bootloader reset vector (word address)
     for (;;) {}
 }
 #endif

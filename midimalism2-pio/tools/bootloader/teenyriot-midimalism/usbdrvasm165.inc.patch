@@ -1,0 +1,44 @@
+--- /private/tmp/claude-502/-Users-daniel-Documents-code-Midimalism-midimalism2-pio/5c00fd4e-d08f-4f58-a9da-e4b5f74d9295/scratchpad/src/USBaspLoader-tiny85/firmware/usbdrv/usbdrvasm165.inc	2026-11-24 11:59:13
++++ usbdrv/usbdrvasm165.inc	2026-11-24 12:03:37
+@@ -44,33 +44,18 @@
+ ; USB-specific portion of the ISR.
+ 
+ USB_INTR_VECTOR:
++#ifdef TINY85MODE
++; Midimalism patch: GPIOR0 bit 0 is set while the boot loader runs (main.c).
++; sbis touches no register or flag, so the application's ISR gets the
++; interrupt 3 cycles late (was ~16: push/in/push/lds/cpi/brne/pop/out/pop),
++; and the boot loader's own ISR 2 cycles late (was ~10).
++    sbis    GPIOR0, 0
++    rjmp    __vectors - TINYVECTOR_USBPLUS_OFFSET
++#endif
+ ;order of registers pushed: YL, SREG [sofError], r0, YH, shift, x1, x2, x3, x4, cnt
+     push    YL              ; push only what is necessary to sync with edge ASAP
+     in      YL, SREG				; 
+     push    YL						; 
+-
+-#ifdef TINY85MODE
+-; look for magic word "B007" at the bottom of the stack
+-	lds YL, RAMEND
+-	cpi YL, 0xB0
+-	brne cleanupAndJumpToApp
+-
+-	lds YL, RAMEND-1
+-	cpi YL, 0x07
+-	breq cleanupBootloaderIntStack
+-
+-cleanupAndJumpToApp:
+-; magic word was not found, put registers back to where they were before this ISR ran, and jump to application ISR
+-	pop YL
+-	out      SREG, YL
+-	pop YL
+-	
+-	rjmp __vectors - TINYVECTOR_USBPLUS_OFFSET
+-
+-cleanupBootloaderIntStack:
+-; magic word was found, put registers 
+-	CLR YL					; [-19] ensure we meet below requirements for YL < 0x80 
+-#endif
+ ;----------------------------------------------------------------------------
+ ; Synchronize with sync pattern:
+ ;----------------------------------------------------------------------------
